@@ -40,7 +40,7 @@ func getImageRes(filename string) (int, int, error) {
 }
 
 type Pixel struct {
-	R,G,B,A float32
+	R,G,B float32
 }
 
 func saveToJPEG(filename string, width, height int, data []Pixel) error {	
@@ -226,13 +226,15 @@ func main() {
 	
 		//save the output if the user wanted to
 		if controller.ShouldSave() {
+			start := time.Now()
 			fileRender.Update()			
 			Ecem.FB.Bind()
 		 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fileRender.BackBuffer, 0)
 			gl.Viewport(0, 0, width, height)
 			fileRender.Tonemap()
 			
-			gl.ReadPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, rawOutput)
+			gl.ReadPixels(0, 0, width, height, gl.RGB, gl.FLOAT, rawOutput)
+			fmt.Printf("Render: %fs\n", time.Since(start).Seconds())
 		
 			go func() {
 				path := "output.jpg"
@@ -248,7 +250,7 @@ func main() {
 		glfw.PollEvents()
 		now := time.Now()
 		diff := now.Sub(lastUpdated)
-		if diff > time.Second*2 {
+		if diff > time.Second*5 {
 			fmt.Printf("%.1f FPS\n", float64(frames)/diff.Seconds())
 			lastUpdated = now
 			frames = 0

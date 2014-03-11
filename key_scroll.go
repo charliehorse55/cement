@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
     glfw "github.com/go-gl/glfw3"
 	Ecem "github.com/charliehorse55/libcement"
 )
@@ -42,7 +41,7 @@ func (k *keyScroll)didScroll(w *glfw.Window, xoff float64, yoff float64) {
 
 func (k *keyScroll)keyPress(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
 	if w.GetAttribute(glfw.Focused) == glfw.True && action == glfw.Release {
-		index := 999; 
+		index := k.selected; 
 		switch key {
 		case glfw.Key1:
 			index = 0
@@ -93,6 +92,7 @@ func (k *keyScroll)Begin(w *glfw.Window, num int) error {
 	w.SetScrollCallback(k.didScroll)
 	w.SetKeyCallback(k.keyPress)
 	k.intensity = make([]RGB64f, num)
+	k.r, k.g, k.b = true, true, true
 	return nil
 }
 
