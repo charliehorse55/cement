@@ -10,13 +10,13 @@ type RGB64f struct {
 }
 
 type keyScroll struct {
-	intensity []RGB64f
+	p Ecem.Painting
 	selected int
 	r, g, b bool
 	save bool
 } 
 
-func clamp(x float64) float64 {
+func clamp(x float32) float32 {
 	if x > 1.0 {
 		return 1.0
 	}
@@ -27,15 +27,16 @@ func clamp(x float64) float64 {
 }
 
 func (k *keyScroll)didScroll(w *glfw.Window, xoff float64, yoff float64) {
-	diff := -yoff/100.0
+	diff := float32(-yoff/100.0)
+	i := k.selected
 	if k.r {
-		k.intensity[k.selected].R = clamp(k.intensity[k.selected].R + diff)
-	}
-	if k.g {
-		k.intensity[k.selected].G = clamp(k.intensity[k.selected].G + diff)
-	}
-	if k.b {
-		k.intensity[k.selected].B = clamp(k.intensity[k.selected].B + diff)
+		k.p[i].Intensity.R = clamp(k.p[i].Intensity.R + diff)
+	}                                            
+	if k.g {                                     
+		k.p[i].Intensity.G = clamp(k.p[i].Intensity.G + diff)
+	}                                            
+	if k.b {                                     
+		k.p[i].Intensity.B = clamp(k.p[i].Intensity.B + diff)
 	}
 }
 
@@ -76,7 +77,7 @@ func (k *keyScroll)keyPress(w *glfw.Window, key glfw.Key, scancode int, action g
 				k.save = true 
 			}
 		}
-		if index < len(k.intensity) {
+		if index < len(k.p) {
 			k.selected = index
 		}
 	}
@@ -88,23 +89,11 @@ func (k *keyScroll)ShouldSave() bool {
 	return tmp
 }
 
-func (k *keyScroll)Begin(w *glfw.Window, num int) error {
+func (k *keyScroll)Begin(w *glfw.Window, p Ecem.Painting) error {
 	w.SetScrollCallback(k.didScroll)
 	w.SetKeyCallback(k.keyPress)
-	k.intensity = make([]RGB64f, num)
+	k.p = p
 	k.r, k.g, k.b = true, true, true
-	return nil
-}
-
-func (k *keyScroll)Update(p Ecem.Painting) error {
-	q := p[1:]
-	for i := range q {
-		q[i].Intensity.R = float32(k.intensity[i].R)
-		q[i].Intensity.G = float32(k.intensity[i].G)
-		q[i].Intensity.B = float32(k.intensity[i].B)
-	}
-	p[0].Intensity = Ecem.RGB32f{1.0, 1.0, 1.0}
-	
 	return nil
 }
 
