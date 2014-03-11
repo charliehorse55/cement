@@ -8,8 +8,9 @@ import (
 	"time"
 	"image"
 	"os"
+	"image/color"
 	_ "image/png"
-	_ "image/jpeg"
+	"image/jpeg"
 	Ecem "github.com/charliehorse55/libcement"
     glfw "github.com/go-gl/glfw3"
     gl "github.com/go-gl/gl"
@@ -17,11 +18,11 @@ import (
 
 type intensityController interface {
 	Begin(w *glfw.Window, num int) error
-	Update(intensity []float32) error
+	Update(p Ecem.Painting) error
+	ShouldSave() bool
 }
 
 var controller intensityController
-var currIntensity []float32
 
 func getImageRes(filename string) (int, int, error) {
 	file, err := os.Open(filename)
@@ -36,6 +37,52 @@ func getImageRes(filename string) (int, int, error) {
 	}
 	
 	return config.Width, config.Height, nil
+}
+
+type Pixel struct {
+	R,G,B,A float32
+}
+
+func saveToJPEG(filename string, width, height int, data []Pixel) error {	
+	output := image.NewNRGBA(image.Rectangle{Max: image.Point{X:width, Y:height}})
+	for i := 0; i < height; i++ {
+		for j := 0; j < width; j++ {
+			
+			//prevent overflow for each channel when packed into 8 bits
+			red := data[i*width +j].R*255
+			if red > 255 {
+				red = 255
+			}
+			green := data[i*width +j].G*255
+			if green > 255 {
+				green = 255
+			}
+			blue := data[i*width +j].B*255
+			if blue > 255 {
+				blue = 255
+			}
+	
+			output.Set(j, height - (i+1), color.NRGBA{
+					R:uint8(red),
+					G:uint8(green),
+					B:uint8(blue),
+					A:uint8(255),
+				})
+		}
+	}
+		
+	outfile, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("Failed to open output file: %s", filename)
+	}
+	defer outfile.Close()
+
+	err = jpeg.Encode(outfile, output, nil)
+	if err != nil {
+		return fmt.Errorf("Failed to encode output file: %v", err)
+	}
+	
+	return nil
 }
 
 
@@ -60,13 +107,7 @@ func main() {
 	flag.Parse()
 	
 	imagePaths := flag.Args()
-	
-	currIntensity = make([]float32, len(imagePaths))
-	
-	// if len(imagePaths) < 2 || len(imagePaths) > 10 {
-	// 	log.Fatalf("Ecement requires n files, where 2 <= n <= 10\n")
-	// }	
-	
+			
 	width, height, err := getImageRes(imagePaths[0])
 	if err != nil {
 		log.Fatalf("Failed to read image: %v\n", err)
@@ -156,27 +197,22 @@ func main() {
 	}
 	
 	screenRender := scene.CreateRendering(windowWidth, windowHeight)
+	fileRender := scene.CreateRendering(width, height)
 	
 	screenFB := gl.Framebuffer(0)
 				
 	lastUpdated := time.Now()
 	frames := 0
-	// shouldSave := false
-	// rawOutput := make([]Pixel, width*height)
+	rawOutput := make([]Pixel, width*height)
 	done := make(chan int, 100)
 	saveOperations := 0
     for !window.ShouldClose() {
 		frames++
 					
-		err = controller.Update(currIntensity)
+		err = controller.Update(scene)
 		if err != nil {
 			log.Printf("Failed to update controller state: %v", err)
 			return
-		}
-		for i := range scene {
-			scene[i].Intensity.R = currIntensity[i]
-			scene[i].Intensity.G = currIntensity[i]
-			scene[i].Intensity.B = currIntensity[i]
 		}
 		
 		//render to the screen
@@ -189,30 +225,25 @@ func main() {
 		checkGLError()		
 	
 		//save the output if the user wanted to
-		// if shouldSave {
-		// 	step.Use()
-		// 	gl.Viewport(0,0, width, height)
-		// 	result := render(vectors, fullSizeFBs, intensitylocation)
-		// 	
-		// 	gl.ActiveTexture(gl.TEXTURE0)
-		// 	result.Bind(gl.TEXTURE_2D)
-		// 
-		// 	final.Use()
-		// 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
-		// 	
-		// 	gl.ReadPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, rawOutput)
-		// 
-		// 	go func() {
-		// 		path := "output.jpg"
-		// 		err := saveToJPEG(path, width, height, rawOutput)
-		// 		if err != nil {
-		// 			log.Printf("Failed to save jpeg: %v", err)
-		// 		}
-		// 		done <- 1
-		// 	}()
-		// 	saveOperations++
-		// 	shouldSave = false	
-		// }
+		if controller.ShouldSave() {
+			fileRender.Update()			
+			Ecem.FB.Bind()
+		 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fileRender.BackBuffer, 0)
+			gl.Viewport(0, 0, width, height)
+			fileRender.Tonemap()
+			
+			gl.ReadPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, rawOutput)
+		
+			go func() {
+				path := "output.jpg"
+				err := saveToJPEG(path, width, height, rawOutput)
+				if err != nil {
+					log.Printf("Failed to save jpeg: %v", err)
+				}
+				done <- 1
+			}()
+			saveOperations++
+		}
 				
 		glfw.PollEvents()
 		now := time.Now()
