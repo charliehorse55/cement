@@ -237,6 +237,10 @@ func main() {
 				if err != nil {
 					log.Printf("Failed to save jpeg: %v", err)
 				}
+				err = saveScript("out.txt", scene)
+				if err != nil {
+					log.Printf("Failed to save script: %v", err)
+				}
 				done <- 1
 			}()
 			saveOperations++
