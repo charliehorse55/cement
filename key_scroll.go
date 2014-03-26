@@ -5,12 +5,9 @@ import (
 	Ecem "github.com/charliehorse55/libcement"
 )
 
-type RGB64f struct {
-	R, G, B float64
-}
 
 type keyScroll struct {
-	p Ecem.Painting
+	intensity []Ecem.RGB32f
 	selected int
 	r, g, b bool
 	save bool
@@ -30,13 +27,13 @@ func (k *keyScroll)didScroll(w *glfw.Window, xoff float64, yoff float64) {
 	diff := float32(-yoff/100.0)
 	i := k.selected
 	if k.r {
-		k.p[i].Intensity.R = clamp(k.p[i].Intensity.R + diff)
+		k.intensity[i].R = clamp(k.intensity[i].R + diff)
 	}                                            
 	if k.g {                                     
-		k.p[i].Intensity.G = clamp(k.p[i].Intensity.G + diff)
+		k.intensity[i].G = clamp(k.intensity[i].G + diff)
 	}                                            
 	if k.b {                                     
-		k.p[i].Intensity.B = clamp(k.p[i].Intensity.B + diff)
+		k.intensity[i].B = clamp(k.intensity[i].B + diff)
 	}
 }
 
@@ -77,7 +74,7 @@ func (k *keyScroll)keyPress(w *glfw.Window, key glfw.Key, scancode int, action g
 				k.save = true 
 			}
 		}
-		if index < len(k.p) {
+		if index < len(k.intensity) {
 			k.selected = index
 		}
 	}
@@ -89,10 +86,10 @@ func (k *keyScroll)ShouldSave() bool {
 	return tmp
 }
 
-func (k *keyScroll)Begin(w *glfw.Window, p Ecem.Painting) error {
+func (k *keyScroll)Begin(w *glfw.Window, intensity []Ecem.RGB32f) error {
 	w.SetScrollCallback(k.didScroll)
 	w.SetKeyCallback(k.keyPress)
-	k.p = p
+	k.intensity = intensity
 	k.r, k.g, k.b = true, true, true
 	return nil
 }

@@ -1,88 +1,26 @@
 package main
 
 import (
-	"flag"
+	"os"
 	"fmt"
 	"log"
-	"runtime"
+	"flag"
 	"time"
 	"image"
-	"os"
-	"image/color"
-	_ "image/png"
-	"image/jpeg"
-	Ecem "github.com/charliehorse55/libcement"
-    glfw "github.com/go-gl/glfw3"
+	"runtime"
+    "path/filepath"
     gl "github.com/go-gl/gl"
+    glfw "github.com/go-gl/glfw3"
+	Ecem "github.com/charliehorse55/libcement"
 )
 
 type intensityController interface {
-	Begin(w *glfw.Window, p Ecem.Painting) error
+	Begin(w *glfw.Window, intensity []Ecem.RGB32f) error
 	ShouldSave() bool
 }
 
 var controller intensityController
 
-func getImageRes(filename string) (int, int, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer file.Close()
-	
-	config, _, err := image.DecodeConfig(file)
-	if err != nil {
-		return 0, 0, err
-	}
-	
-	return config.Width, config.Height, nil
-}
-
-type Pixel struct {
-	R,G,B float32
-}
-
-func saveToJPEG(filename string, width, height int, data []Pixel) error {	
-	output := image.NewNRGBA(image.Rectangle{Max: image.Point{X:width, Y:height}})
-	for i := 0; i < height; i++ {
-		for j := 0; j < width; j++ {
-			
-			//prevent overflow for each channel when packed into 8 bits
-			red := data[i*width +j].R*255
-			if red > 255 {
-				red = 255
-			}
-			green := data[i*width +j].G*255
-			if green > 255 {
-				green = 255
-			}
-			blue := data[i*width +j].B*255
-			if blue > 255 {
-				blue = 255
-			}
-	
-			output.Set(j, height - (i+1), color.NRGBA{
-					R:uint8(red),
-					G:uint8(green),
-					B:uint8(blue),
-					A:uint8(255),
-				})
-		}
-	}
-		
-	outfile, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("Failed to open output file: %s", filename)
-	}
-	defer outfile.Close()
-
-	err = jpeg.Encode(outfile, output, nil)
-	if err != nil {
-		return fmt.Errorf("Failed to encode output file: %v", err)
-	}
-	
-	return nil
-}
 
 
 // OpenGL and glfw need to be called from the main thread
@@ -98,6 +36,18 @@ func checkGLError() {
 	}
 }
 
+func createTexture(img *image.NRGBA) gl.Texture {
+	result := gl.GenTexture()
+	result.Bind(gl.TEXTURE_2D)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	dim := img.Bounds().Max
+    gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, dim.X, dim.Y, 0, gl.RGBA, gl.UNSIGNED_BYTE, img.Pix)
+	return result
+}
+
 func errorCallback(err glfw.ErrorCode, desc string) {
     log.Fatalf("%v: %v\n", err, desc)
 }
@@ -105,9 +55,32 @@ func errorCallback(err glfw.ErrorCode, desc string) {
 func main() {
 	flag.Parse()
 	
-	imagePaths := flag.Args()
-			
-	width, height, err := getImageRes(imagePaths[0])
+	inputFiles := flag.Args()
+	
+	if len(inputFiles) == 0 {
+		fmt.Fprintf(os.Stderr, "cement requires input files\n")
+		return
+	}
+	
+	var cfg *Config
+	if len(inputFiles) == 1 {
+		var err error
+		cfg, err = LoadConfig(inputFiles[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read config at %s: %v\n", inputFiles[0], err)
+		}
+	} else {
+		cfg = new(Config)
+		cfg.filepath = "out.json"
+		cfg.Background = inputFiles[0]
+		cfg.Vectors = make([]Lightvector, len(inputFiles) - 1)
+		for i,path := range inputFiles[1:] {
+			cfg.Vectors[i].Intensity = Ecem.RGB32f{1.0, 1.0, 1.0}
+			cfg.Vectors[i].Filename = path
+		}
+	}
+	
+	width, height, err := getImageRes(filepath.Join(cfg.basePath, cfg.Vectors[0].Filename))
 	if err != nil {
 		log.Fatalf("Failed to read image: %v\n", err)
 	}
@@ -176,29 +149,25 @@ func main() {
 	
 	
 	Ecem.Start()
-	
-	//load the textures
-	scene := make(Ecem.Painting, len(imagePaths))
-	for i, path := range imagePaths {
-		scene[i].Filename = path
-		scene[i].Intensity.R = 1.0
-		scene[i].Intensity.G = 1.0
-		scene[i].Intensity.B = 1.0
+		
+	scene, err := cfg.LoadPainting()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load painting: %v\n", err)
+		return
+	}
+
+	intensity := make([]Ecem.RGB32f, len(cfg.Vectors))
+	for i := range intensity {
+		intensity[i] = cfg.Vectors[i].Intensity
 	}
 	
-	//the background is always at 100%, don't send it to the controller
-	err = controller.Begin(window, scene[1:])
+	err = controller.Begin(window, intensity)
 	if err != nil {
 		log.Fatalf("Failed to initialze controller: %v", err)
 	}
 	
-	err = scene.Load(true)
-	if err != nil {
-		log.Fatalf("Failed to load images: %v")
-	}
-	
-	screenRender := scene.CreateRendering(windowWidth, windowHeight)
-	fileRender := scene.CreateRendering(width, height)
+	screenRender := scene.CreateRendering(windowWidth, windowHeight, intensity)
+	fileRender := scene.CreateRendering(width, height, intensity)
 	
 	screenFB := gl.Framebuffer(0)
 				
@@ -211,10 +180,15 @@ func main() {
 		frames++
 							
 		//render to the screen
-		screenRender.Update()
+		screenRender.Update(intensity)
+		checkGLError()		
 				
 		screenFB.Bind()
+		checkGLError()		
+		
 		gl.Viewport(0, 0, windowWidth, windowHeight)
+		checkGLError()		
+		
 		screenRender.Tonemap()
 
 		checkGLError()		
@@ -222,7 +196,7 @@ func main() {
 		//save the output if the user wanted to
 		if controller.ShouldSave() {
 			start := time.Now()
-			fileRender.Update()			
+			fileRender.Update(intensity)			
 			Ecem.FB.Bind()
 		 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fileRender.BackBuffer, 0)
 			gl.Viewport(0, 0, width, height)
@@ -230,16 +204,22 @@ func main() {
 			
 			gl.ReadPixels(0, 0, width, height, gl.RGB, gl.FLOAT, rawOutput)
 			fmt.Printf("Render: %fs\n", time.Since(start).Seconds())
+			
+			//set the intensity to the current intensity
+			for i := range intensity {
+				cfg.Vectors[i].Intensity = intensity[i]
+			}
 		
 			go func() {
-				path := "output.jpg"
+				path := filepath.Join(cfg.basePath, "output.jpg")
 				err := saveToJPEG(path, width, height, rawOutput)
 				if err != nil {
 					log.Printf("Failed to save jpeg: %v", err)
 				}
-				err = saveScript("out.txt", scene)
+				
+				err = cfg.Save(cfg.filepath)				
 				if err != nil {
-					log.Printf("Failed to save script: %v", err)
+					log.Printf("Failed to save config: %v", err)
 				}
 				done <- 1
 			}()
