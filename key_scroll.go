@@ -24,7 +24,7 @@ func clamp(x float32) float32 {
 }
 
 func (k *keyScroll)didScroll(w *glfw.Window, xoff float64, yoff float64) {
-	diff := float32(-yoff/100.0)
+	diff := float32(-yoff/50.0)
 	i := k.selected
 	if k.r {
 		k.intensity[i].R = clamp(k.intensity[i].R + diff)
